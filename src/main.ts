@@ -5,8 +5,12 @@ import { createNoise2D } from 'simplex-noise';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+const skyColor = new THREE.Color(0x87CEEB);
+const waterColor = new THREE.Color(0x1a5e8c);
+const waterLevel = -2.0;
+
+scene.background = skyColor;
+scene.fog = new THREE.Fog(skyColor.getHex(), 20, 100);
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -66,6 +70,8 @@ const moveState = {
   backward: false,
   left: false,
   right: false,
+  sprint: false,
+  jump: false,
 };
 
 const onKeyDown = (event: KeyboardEvent) => {
@@ -74,6 +80,9 @@ const onKeyDown = (event: KeyboardEvent) => {
     case 'KeyA': moveState.left = true; break;
     case 'KeyS': moveState.backward = true; break;
     case 'KeyD': moveState.right = true; break;
+    case 'ShiftLeft':
+    case 'ShiftRight': moveState.sprint = true; break;
+    case 'Space': moveState.jump = true; break;
   }
 };
 
@@ -83,6 +92,9 @@ const onKeyUp = (event: KeyboardEvent) => {
     case 'KeyA': moveState.left = false; break;
     case 'KeyS': moveState.backward = false; break;
     case 'KeyD': moveState.right = false; break;
+    case 'ShiftLeft':
+    case 'ShiftRight': moveState.sprint = false; break;
+    case 'Space': moveState.jump = false; break;
   }
 };
 
@@ -253,6 +265,21 @@ const updateChunks = (playerX: number, playerZ: number) => {
   });
 };
 
+// Water
+const waterGeo = new THREE.PlaneGeometry(1000, 1000);
+const waterMat = new THREE.MeshStandardMaterial({
+  color: 0x4fa3e3,
+  transparent: true,
+  opacity: 0.6,
+  roughness: 0.1,
+  metalness: 0.1,
+  flatShading: true,
+});
+const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+waterMesh.rotateX(-Math.PI / 2);
+waterMesh.position.y = waterLevel;
+scene.add(waterMesh);
+
 // Animals
 const animals: { mesh: THREE.Group, type: 'sheep' | 'bird', target: THREE.Vector3 }[] = [];
 const addAnimals = () => {
@@ -352,37 +379,78 @@ const animate = () => {
   const time = performance.now();
   const delta = Math.min((time - prevTime) / 1000, 0.1); // Cap delta to avoid huge jumps
 
+  const currentWaterY = waterLevel + Math.sin(time * 0.001) * 0.15;
+  waterMesh.position.y = currentWaterY;
+
+  const playerPos = camera.position;
+  const isUnderwater = playerPos.y < currentWaterY + 0.2; // Camera is at player head height
+
+  if (isUnderwater) {
+    scene.background = waterColor;
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color = waterColor;
+      scene.fog.near = 5;
+      scene.fog.far = 25;
+    }
+  } else {
+    scene.background = skyColor;
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color = skyColor;
+      scene.fog.near = 20;
+      scene.fog.far = 100;
+    }
+  }
+
   if (controls.isLocked) {
+    const groundHeight = getTerrainHeight(playerPos.x, playerPos.z);
+
     // Movement Physics
-    velocity.x -= velocity.x * 10.0 * delta;
-    velocity.z -= velocity.z * 10.0 * delta;
-    velocity.y -= 30.0 * delta; // Gravity
+    velocity.x -= velocity.x * (isUnderwater ? 15.0 : 10.0) * delta;
+    velocity.z -= velocity.z * (isUnderwater ? 15.0 : 10.0) * delta;
+    
+    if (isUnderwater) {
+      velocity.y -= 10.0 * delta; // Slower sinking in water
+      velocity.y -= velocity.y * 4.0 * delta; // Water drag
+    } else {
+      velocity.y -= 30.0 * delta; // Gravity
+    }
 
     direction.z = Number(moveState.forward) - Number(moveState.backward);
     direction.x = Number(moveState.right) - Number(moveState.left);
     direction.normalize();
 
-    const speed = 60.0;
+    let speed = moveState.sprint ? 110.0 : 60.0;
+    if (isUnderwater) speed *= 0.5; // Slow down in water
+
     if (moveState.forward || moveState.backward) velocity.z -= direction.z * speed * delta;
     if (moveState.left || moveState.right) velocity.x -= direction.x * speed * delta;
 
     controls.moveRight(-velocity.x * delta);
     controls.moveForward(-velocity.z * delta);
-    camera.position.y += velocity.y * delta;
+    playerPos.y += velocity.y * delta;
 
-    // Terrain Collision
-    const playerPos = camera.position;
-    const groundHeight = getTerrainHeight(playerPos.x, playerPos.z);
-    
     // Check if player is below ground
     if (playerPos.y < groundHeight + 2) {
       velocity.y = 0;
       playerPos.y = groundHeight + 2;
     }
 
+    // Jumping & Swimming physics
+    const isGrounded = playerPos.y <= groundHeight + 2.05;
+    if (moveState.jump) {
+      if (isUnderwater) {
+        velocity.y = 5.0; // Swim up
+      } else if (isGrounded) {
+        velocity.y = 12.0; // Jump
+      }
+    }
+
     updateChunks(playerPos.x, playerPos.z);
     
-    // Follow particles
+    // Follow water and particles
+    waterMesh.position.x = playerPos.x;
+    waterMesh.position.z = playerPos.z;
+
     particlesMesh.position.x = playerPos.x;
     particlesMesh.position.z = playerPos.z;
   }
