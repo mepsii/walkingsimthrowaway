@@ -10,7 +10,7 @@ const waterColor = new THREE.Color(0x1a5e8c);
 const waterLevel = -2.0;
 
 scene.background = skyColor;
-scene.fog = new THREE.Fog(skyColor.getHex(), 20, 100);
+scene.fog = new THREE.Fog(skyColor.getHex(), 60, 270);
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -107,7 +107,7 @@ const moistureNoise2D = createNoise2D();
 const CHUNK_SIZE = 50;
 const SEGMENTS = 50;
 const CHUNKS = new Map<string, THREE.Mesh>();
-const RENDER_DISTANCE = 3;
+const RENDER_DISTANCE = 6;
 
 // Material
 const terrainMaterial = new THREE.MeshStandardMaterial({
@@ -396,8 +396,8 @@ const animate = () => {
     scene.background = skyColor;
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color = skyColor;
-      scene.fog.near = 20;
-      scene.fog.far = 100;
+      scene.fog.near = 60;
+      scene.fog.far = 270;
     }
   }
 
